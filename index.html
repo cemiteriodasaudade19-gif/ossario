@@ -881,7 +881,9 @@ function updateConfigView() {
 // QUADRAS
 // ═══════════════════════════════════════════════════════
 function getQuadras() {
-  return [...new Set(db.map(r => r.quadra))].sort((a,b) => a.localeCompare(b));
+  const fromDb = db.map(r => r.quadra).filter(Boolean);
+  const all = [...new Set([...fromDb, ...customQuadras])];
+  return all.sort((a,b) => a.localeCompare(b));
 }
 
 function populateQuadraFilters() {
@@ -932,6 +934,7 @@ function renderDashboard() {
 }
 
 function refreshAllViews() {
+  loadCustomQuadras(); // reload custom quadras from storage
   populateQuadraFilters();
   updateStats();
   renderDashboard();
@@ -1017,16 +1020,33 @@ function getBadge(r) {
 function renderQuadrasView() {
   document.getElementById('quadras-list').innerHTML = getQuadras().map(q => {
     const items=db.filter(r=>r.quadra===q), sel=selectedQuadra===q;
+    const isEmpty = items.length === 0;
     return `<div class="quadra-card ${sel?'selected':''}" onclick="selectQuadra('${esc(q)}')">
-      <div class="quadra-name">🗂️ ${esc(q)}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between">
+        <div class="quadra-name">🗂️ ${esc(q)}</div>
+        ${isEmpty ? `<button class="btn btn-danger btn-sm" onclick="event.stopPropagation();removeCustomQuadra('${esc(q)}')">🗑️</button>` : ''}
+      </div>
       <div class="quadra-meta" style="margin-top:8px">
-        <span style="color:var(--accent);font-weight:600">${items.length}</span> ossários &middot;
-        <span style="color:var(--danger)">${items.filter(r=>r.devolvido).length}</span> devolvidos &middot;
-        <span style="color:var(--warn)">${items.filter(r=>r.debito).length}</span> débitos &middot;
-        <span style="color:var(--accent2)">${items.filter(r=>r.historico&&r.historico.length>0).length}</span> revendidos
+        ${isEmpty 
+          ? '<span style="color:var(--muted);font-style:italic">Quadra vazia — adicione ossários</span>'
+          : `<span style="color:var(--accent);font-weight:600">${items.length}</span> ossários &middot;
+             <span style="color:var(--danger)">${items.filter(r=>r.devolvido).length}</span> devolvidos &middot;
+             <span style="color:var(--warn)">${items.filter(r=>r.debito).length}</span> débitos &middot;
+             <span style="color:var(--accent2)">${items.filter(r=>r.historico&&r.historico.length>0).length}</span> revendidos`
+        }
       </div>
     </div>`;
   }).join('');
+}
+
+function removeCustomQuadra(name) {
+  if (!confirm(`Remover a quadra "${name}"?`)) return;
+  customQuadras = customQuadras.filter(q => q !== name);
+  saveCustomQuadras();
+  populateQuadraFilters();
+  renderDashboard();
+  renderQuadrasView();
+  toast(`Quadra "${name}" removida`, 'info');
 }
 
 function selectQuadra(q) {
@@ -1177,6 +1197,10 @@ async function saveRecord() {
   }
 
   saveLocal();
+  
+  // If this quadra was in customQuadras, keep it there too (no harm)
+  // Remove from custom only if we want to clean up — not needed
+  
   closeModal('modal-edit');
   refreshAllViews();
   toast(id?'Registro atualizado!':'Novo ossário cadastrado!','success');
@@ -1191,10 +1215,26 @@ function saveNewQuadra() {
   const name=document.getElementById('new-quadra-name').value.trim();
   if (!name) { toast('Informe o nome da quadra','error'); return; }
   if (getQuadras().includes(name)) { toast('Esta quadra já existe','error'); return; }
+  
+  // Save to persistent custom quadras list
+  customQuadras.push(name);
+  saveCustomQuadras();
+  
   closeModal('modal-quadra');
   document.getElementById('new-quadra-name').value='';
-  toast(`Quadra "${name}" criada!`,'success');
-  setTimeout(()=>{ openAddModal(); document.getElementById('edit-quadra').value=name||getQuadras()[0]; },100);
+  
+  // Refresh all views
+  populateQuadraFilters();
+  renderDashboard();
+  renderQuadrasView();
+  
+  toast(`Quadra "${name}" criada com sucesso!`,'success');
+  
+  // Open add modal pre-selected on new quadra
+  setTimeout(()=>{ 
+    openAddModal(); 
+    document.getElementById('edit-quadra').value = name;
+  }, 200);
 }
 
 // ═══════════════════════════════════════════════════════
