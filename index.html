@@ -585,9 +585,15 @@ function init() {
 function loadLocal() {
   const saved = localStorage.getItem(STORAGE_KEY);
   if (saved) {
-    try { db = JSON.parse(saved); return; } catch(e) {}
+    try { 
+      db = JSON.parse(saved);
+      // Normalize ids
+      db = db.map((r, i) => ({ ...r, id: String(r.id || i+1).trim() }));
+      return; 
+    } catch(e) {}
   }
   db = JSON.parse(JSON.stringify(INITIAL_DATA));
+  db = db.map((r, i) => ({ ...r, id: String(r.id || i+1).trim() }));
   saveLocal();
 }
 
@@ -1074,7 +1080,7 @@ function renderFiltered(bodyId, filter, isRevenda) {
 // DETAIL MODAL
 // ═══════════════════════════════════════════════════════
 function openDetail(id) {
-  const r=db.find(x=>x.id===id); if(!r) return;
+  const r=db.find(x=>String(x.id)===String(id)); if(!r) return;
   const hist=r.historico&&r.historico.length>0
     ? `<div style="margin-top:20px"><div class="form-label" style="margin-bottom:10px">📜 Histórico de Proprietários</div>
        ${r.historico.map(h=>`<div class="history-item"><div class="history-name">${esc(h.proprietario)}</div><div class="history-meta">Adquirido: ${esc(h.data||'—')} · Controle: ${esc(h.controle||'—')} · Transferido: ${esc(h.dataTransferencia||'—')}</div></div>`).join('')}
@@ -1112,7 +1118,7 @@ function openAddModal() {
 }
 
 function openEditModal(id) {
-  const r=db.find(x=>x.id===id); if(!r) return;
+  const r=db.find(x=>String(x.id)===String(id)); if(!r) return;
   document.getElementById('edit-id').value=id;
   document.getElementById('modal-icon').textContent='✏️';
   document.getElementById('modal-title').textContent=`Editar Ossário #${r.numero}`;
@@ -1156,7 +1162,7 @@ async function saveRecord() {
 
   let record;
   if (id) {
-    record = db.find(x=>x.id===id); if(!record) return;
+    record = db.find(x=>String(x.id)===String(id)); if(!record) return;
     if (revendaNovo) {
       if (!record.historico) record.historico=[];
       record.historico.push({proprietario:record.proprietario,data:record.data||'',controle:record.controle||'',dataTransferencia:revendaData||new Date().toLocaleDateString('pt-BR')});
@@ -1196,7 +1202,7 @@ function saveNewQuadra() {
 // ═══════════════════════════════════════════════════════
 async function deleteRecord(id) {
   if (!confirm('Excluir este registro?')) return;
-  db=db.filter(r=>r.id!==id);
+  db=db.filter(r=>String(r.id)!==String(id));
   saveLocal();
   refreshAllViews();
   toast('Registro excluído','info');
