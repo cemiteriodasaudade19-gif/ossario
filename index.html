@@ -560,6 +560,21 @@ let syncTimer = null;
 let lastSync = null;
 let syncStatus = 'offline'; // offline | syncing | ok | error
 
+// Custom quadras (created by user, persisted separately)
+let customQuadras = [];
+const QUADRAS_KEY = 'cemiterio_quadras_extras';
+
+function loadCustomQuadras() {
+  try {
+    const saved = localStorage.getItem(QUADRAS_KEY);
+    customQuadras = saved ? JSON.parse(saved) : [];
+  } catch(e) { customQuadras = []; }
+}
+
+function saveCustomQuadras() {
+  localStorage.setItem(QUADRAS_KEY, JSON.stringify(customQuadras));
+}
+
 // ═══════════════════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════════════════
