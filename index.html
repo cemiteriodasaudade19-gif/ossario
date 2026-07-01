@@ -741,10 +741,42 @@ function jsonpCall(action, smallPayload = {}) {
   });
 }
 
-// ── For payloads with large data, POST via fetch with no-cors then poll ──
+// ── JSONP-based call with confirmed response (used for save/delete/getAll) ──
+// Encodes payload as base64 in the URL — works for single records (small payloads)
+function jsonpCallWithData(action, dataObj) {
+  return new Promise((resolve, reject) => {
+    const cbName = 'cb_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    const timer  = setTimeout(() => {
+      delete window[cbName];
+      if (sc.parentNode) sc.parentNode.removeChild(sc);
+      reject(new Error('Timeout — servidor não respondeu'));
+    }, 20000);
+
+    window[cbName] = (data) => {
+      clearTimeout(timer);
+      delete window[cbName];
+      if (sc.parentNode) sc.parentNode.removeChild(sc);
+      if (data && data.error) reject(new Error(data.error));
+      else resolve(data);
+    };
+
+    const payload = JSON.stringify({ action, ...dataObj });
+    const encoded = btoa(unescape(encodeURIComponent(payload)));
+    const url = API_URL + '?callback=' + cbName + '&data=' + encodeURIComponent(encoded);
+
+    const sc = document.createElement('script');
+    sc.src = url;
+    sc.onerror = () => {
+      clearTimeout(timer);
+      delete window[cbName];
+      reject(new Error('Erro de conexão com o servidor'));
+    };
+    document.head.appendChild(sc);
+  });
+}
+
+// ── Fire-and-forget POST for VERY LARGE payloads only (bulkLoad) ──
 async function postCall(action, body = {}) {
-  // Send via fetch POST (fire-and-forget for writes, since no-cors blocks response)
-  // For reads we use JSONP; for writes we POST then verify via JSONP
   const payload = JSON.stringify({ action, ...body });
   await fetch(API_URL, {
     method: 'POST',
@@ -752,24 +784,24 @@ async function postCall(action, body = {}) {
     headers: { 'Content-Type': 'text/plain' },
     body: payload
   });
-  // no-cors returns opaque response, so we can't read it — assume success
   return { ok: true };
 }
 
 async function apiCall(action, body = {}) {
   if (!API_URL) return null;
 
-  // For getAll: use JSONP (GET, readable response)
-  if (action === 'getAll' || action === 'delete') {
+  // getAll: JSONP (GET, no data payload)
+  if (action === 'getAll') {
     return jsonpCall(action, body);
   }
 
-  // For save/bulkLoad with large data: POST no-cors (write only)
-  try {
-    return await postCall(action, body);
-  } catch(e) {
-    throw new Error('Erro de conexão com o servidor');
+  // save / delete: use JSONP WITH confirmed response (small payloads, single record)
+  if (action === 'save' || action === 'delete') {
+    return jsonpCallWithData(action, body);
   }
+
+  // bulkLoad: large payload, fire-and-forget
+  return postCall(action, body);
 }
 
 async function loadFromSheets() {
@@ -818,33 +850,45 @@ async function saveToSheets(record) {
 async function flushSaveQueue() {
   if (isFlushing || saveQueue.length === 0) return;
   isFlushing = true;
-  
+  let anyError = false;
+
   while (saveQueue.length > 0) {
     const record = saveQueue.shift();
     try {
-      await postCall('save', {record});
-      setSyncStatus('ok', `Salvo · ${db.length.toLocaleString('pt-BR')} registros`);
+      const result = await jsonpCallWithData('save', {record});
+      if (!result || !result.ok) {
+        anyError = true;
+        toast(`Erro ao salvar registro ${record.numero}: resposta inválida do servidor`, 'error');
+      } else {
+        setSyncStatus('ok', `Salvo com sucesso`);
+      }
     } catch(e) {
-      setSyncStatus('error', 'Erro ao salvar — dado salvo localmente');
+      anyError = true;
+      setSyncStatus('error', 'Erro ao salvar: ' + e.message);
+      toast(`Falha ao salvar ${record.numero} na nuvem: ${e.message}`, 'error');
     }
-    // Small delay between saves
-    if (saveQueue.length > 0) await sleep(500);
+    if (saveQueue.length > 0) await sleep(600);
   }
-  
+
   isFlushing = false;
   isSaving   = false;
-  
-  // Only sync from Sheets after ALL pending saves are done
-  setTimeout(loadFromSheets, 4000);
+
+  // Only sync from Sheets after ALL pending saves are done — and only if no errors
+  if (!anyError) {
+    setTimeout(loadFromSheets, 3000);
+  } else {
+    setSyncStatus('error', 'Alguns dados podem não ter sincronizado — verifique a conexão');
+  }
 }
 
 async function deleteFromSheets(id) {
   if (!API_URL) return;
   try {
-    await postCall('delete', {id});
+    await jsonpCallWithData('delete', {id});
     setTimeout(loadFromSheets, 3000);
   } catch(e) {
-    setSyncStatus('error', 'Erro ao excluir no servidor');
+    setSyncStatus('error', 'Erro ao excluir no servidor: ' + e.message);
+    toast('Erro ao excluir no servidor', 'error');
   }
 }
 
