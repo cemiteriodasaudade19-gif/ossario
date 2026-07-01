@@ -646,6 +646,7 @@ let selectedQuadra = null;
 let syncTimer = null;
 let lastSync = null;
 let syncStatus = 'offline'; // offline | syncing | ok | error
+let isSaving   = false;    // prevent sync from overwriting pending saves
 
 // Custom quadras (created by user, persisted separately)
 let customQuadras = [];
@@ -774,6 +775,7 @@ async function apiCall(action, body = {}) {
 
 async function loadFromSheets() {
   if (!API_URL) return;
+  if (isSaving) return; // don't overwrite while saving
   setSyncStatus('syncing', 'Sincronizando...');
   try {
     const data = await jsonpCall('getAll');
@@ -797,11 +799,12 @@ async function syncNow() {
 
 async function saveToSheets(record) {
   if (!API_URL) return;
+  isSaving = true;
   try {
     await postCall('save', {record});
-    // after a short delay, sync to confirm
-    setTimeout(loadFromSheets, 3000);
+    setTimeout(() => { isSaving = false; loadFromSheets(); }, 3000);
   } catch(e) {
+    isSaving = false;
     setSyncStatus('error', 'Erro ao salvar — dado salvo localmente');
   }
 }
@@ -988,13 +991,35 @@ function getQuadras() {
   return all.sort((a,b) => a.localeCompare(b));
 }
 
-function populateQuadraFilters() {
+function populateQuadraFilters(selectedQuadraValue) {
   const quadras = getQuadras();
+  
+  // Filter dropdown
   const sel = document.getElementById('filter-quadra');
+  const currentFilter = sel.value;
   sel.innerHTML = '<option value="">Todas as Quadras</option>';
-  quadras.forEach(q => sel.innerHTML += `<option value="${esc(q)}">${esc(q)}</option>`);
+  quadras.forEach(q => {
+    const opt = document.createElement('option');
+    opt.value = q; opt.textContent = q;
+    if (q === currentFilter) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  
+  // Edit dropdown
   const editSel = document.getElementById('edit-quadra');
-  editSel.innerHTML = quadras.map(q => `<option value="${esc(q)}">${esc(q)}</option>`).join('');
+  const currentEdit = selectedQuadraValue || editSel.value;
+  editSel.innerHTML = '';
+  quadras.forEach(q => {
+    const opt = document.createElement('option');
+    opt.value = q; opt.textContent = q;
+    if (q === currentEdit) opt.selected = true;
+    editSel.appendChild(opt);
+  });
+  
+  // If a value was passed, force-set it
+  if (selectedQuadraValue) {
+    editSel.value = selectedQuadraValue;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1316,8 +1341,7 @@ function openEditModal(id) {
   document.getElementById('edit-debito').checked=r.debito||false;
   document.getElementById('revenda-section').style.display='none';
   ['revenda-novo','revenda-data','revenda-controle'].forEach(id=>document.getElementById(id).value='');
-  populateQuadraFilters();
-  document.getElementById('edit-quadra').value=r.quadra;
+  populateQuadraFilters(r.quadra);
   const hist=r.historico||[];
   document.getElementById('historico-list').innerHTML=hist.length===0
     ? '<div style="color:var(--muted);font-size:12px;margin-bottom:8px">Sem histórico de transferências</div>'
@@ -1400,7 +1424,8 @@ async function saveRecord() {
     }
     record.numero=numero; record.quadra=quadra; record.devolvido=devolvido; record.debito=debito;
   } else {
-    record = {id:Date.now().toString(),quadra,numero,proprietario,data,controle,devolvido,debito,historico:[],status:'ativo'};
+    if (!quadra) { toast('Selecione uma quadra', 'error'); return; }
+    record = {id:Date.now().toString(),quadra,numero,proprietario,data,controle,devolvido,debito,historico:[],exumacoes:[],status:'ativo'};
     db.unshift(record);
   }
 
