@@ -584,12 +584,12 @@ tr:hover td{background:#f9fafb}
       </div>
       <div class="form-row">
         <div class="form-group">
-          <label class="form-label">Data de Falecimento</label>
-          <input class="form-input" id="exum-data-falec" placeholder="dd/mm/aaaa">
-        </div>
-        <div class="form-group">
           <label class="form-label">Data de Entrada no Ossário</label>
           <input class="form-input" id="exum-data-entrada" placeholder="dd/mm/aaaa">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Número do Lacre</label>
+          <input class="form-input" id="exum-lacre" placeholder="Ex: 00123">
         </div>
       </div>
       <div class="form-group">
@@ -598,9 +598,8 @@ tr:hover td{background:#f9fafb}
           <option value="no_ossario">⚰️ No Ossário</option>
           <option value="transferido_cemiterio">🚗 Transferido para outro cemitério</option>
           <option value="transferido_coletivo">📦 Transferido para coletivo</option>
+          <option value="transferido_terreno">🏡 Transferido para terreno particular</option>
           <option value="cremado">🔥 Cremado</option>
-          <option value="exumado">✅ Exumado</option>
-          <option value="outro">📝 Outro</option>
         </select>
       </div>
       <div class="form-group" id="exum-destino-group" style="display:none">
@@ -1262,8 +1261,8 @@ function openDetail(id) {
           <div class="exum-slot-num">Vaga ${i+1}</div>
           <div class="exum-nome">${esc(e.nome)}</div>
           <div class="exum-meta">
-            ${e.dataFalec?'Falecido: '+esc(e.dataFalec)+' · ':''}
             ${e.dataEntrada?'Entrada: '+esc(e.dataEntrada):''}
+            ${e.lacre?' · Lacre: '+esc(e.lacre):''}
             ${e.dataSaida?' · Saída: '+esc(e.dataSaida):''}
           </div>
           <span class="exum-badge ${getExumBadgeClass(e.situacao)}">${getExumLabel(e.situacao)}</span>
@@ -1370,7 +1369,7 @@ function renderEditExumSlots(r) {
       html += `<div class="exum-slot ocupado">
         <div class="exum-slot-num">Vaga ${i+1}</div>
         <div class="exum-nome">${esc(e.nome)}</div>
-        <div class="exum-meta">${e.dataFalec?'Falecido: '+esc(e.dataFalec)+' · ':''} ${e.dataEntrada?'Entrada: '+esc(e.dataEntrada):''}</div>
+        <div class="exum-meta">${e.dataEntrada?'Entrada: '+esc(e.dataEntrada):''} ${e.lacre?'· Lacre: '+esc(e.lacre):''}</div>
         <span class="exum-badge ${getExumBadgeClass(e.situacao)}">${getExumLabel(e.situacao)}</span>
         <div class="exum-actions">
           <button class="btn btn-ghost btn-sm" onclick="openExumModal('${id}',${i})">✏️</button>
@@ -1572,8 +1571,8 @@ function openExumModal(ossarioId, slotIdx) {
     : `Adicionar Falecido — Vaga ${slotIdx+1} — Ossário ${r.numero}`;
   
   document.getElementById('exum-nome').value        = e ? e.nome        || '' : '';
-  document.getElementById('exum-data-falec').value  = e ? e.dataFalec   || '' : '';
   document.getElementById('exum-data-entrada').value= e ? e.dataEntrada || '' : '';
+  document.getElementById('exum-lacre').value       = e ? e.lacre       || '' : '';
   document.getElementById('exum-situacao').value    = e ? e.situacao    || 'no_ossario' : 'no_ossario';
   document.getElementById('exum-destino').value     = e ? e.destino     || '' : '';
   document.getElementById('exum-data-saida').value  = e ? e.dataSaida   || '' : '';
@@ -1586,7 +1585,7 @@ function openExumModal(ossarioId, slotIdx) {
 
 function toggleExumDestino() {
   const sit = document.getElementById('exum-situacao').value;
-  const show = ['transferido_cemiterio','transferido_coletivo','outro'].includes(sit);
+  const show = ['transferido_cemiterio','transferido_coletivo','transferido_terreno'].includes(sit);
   document.getElementById('exum-destino-group').style.display = show ? 'block' : 'none';
 }
 
@@ -1599,38 +1598,53 @@ async function saveExumacao() {
   const ossarioId = document.getElementById('exum-ossario-id').value;
   const slotIdx   = parseInt(document.getElementById('exum-slot-idx').value);
   const nome      = document.getElementById('exum-nome').value.trim();
-  
-  if (!nome) { toast('Informe o nome do falecido', 'error'); return; }
-  
-  const r = db.find(x => String(x.id) === String(ossarioId));
-  if (!r) return;
-  
-  if (!r.exumacoes) r.exumacoes = [];
-  
+
+  if (!ossarioId) { toast('Ossário não identificado', 'error'); return; }
+  if (!nome)      { toast('Informe o nome do falecido', 'error'); return; }
+
+  // Find record — search by id robustly
+  const r = db.find(x => String(x.id).trim() === String(ossarioId).trim());
+  if (!r) {
+    toast('Ossário não encontrado — tente fechar e abrir novamente', 'error');
+    return;
+  }
+
+  // Ensure exumacoes array exists and has enough slots
+  if (!Array.isArray(r.exumacoes)) r.exumacoes = [];
+
   const entry = {
     nome,
-    dataFalec  : document.getElementById('exum-data-falec').value.trim(),
     dataEntrada: document.getElementById('exum-data-entrada').value.trim(),
+    lacre      : document.getElementById('exum-lacre').value.trim(),
     situacao   : document.getElementById('exum-situacao').value,
     destino    : document.getElementById('exum-destino').value.trim(),
     dataSaida  : document.getElementById('exum-data-saida').value.trim(),
     obs        : document.getElementById('exum-obs').value.trim(),
   };
-  
+
+  // Fill any gaps with null up to slotIdx
+  while (r.exumacoes.length < slotIdx) r.exumacoes.push(null);
   r.exumacoes[slotIdx] = entry;
-  // Remove undefined slots at end
-  while(r.exumacoes.length > 0 && !r.exumacoes[r.exumacoes.length-1]) {
-    r.exumacoes.pop();
-  }
-  
+
+  // Save locally first
   saveLocal();
+
+  // Close modal and refresh UI
   closeModal('modal-exum');
-  
-  // Refresh edit modal if open
+
+  // Refresh the edit modal slots if it's open for this ossário
   const editId = document.getElementById('edit-id').value;
-  if (editId === ossarioId) renderEditExumSlots(r);
-  
+  if (String(editId).trim() === String(ossarioId).trim()) {
+    renderEditExumSlots(r);
+  }
+
+  // Also refresh detail view if open
+  openDetail(ossarioId);
+  closeModal('modal-detail');
+
   toast('Falecido salvo com sucesso!', 'success');
+
+  // Sync to Sheets
   saveToSheets(r);
 }
 
@@ -1670,6 +1684,7 @@ function getExumBadgeClass(sit) {
     no_ossario            : 'exum-inativo',
     transferido_cemiterio : 'exum-transferido-cem',
     transferido_coletivo  : 'exum-transferido-col',
+    transferido_terreno   : 'exum-transferido-col',
     cremado               : 'exum-cremado',
     exumado               : 'exum-exumado',
     outro                 : 'exum-outro',
@@ -1682,6 +1697,7 @@ function getExumLabel(sit) {
     no_ossario            : '⚰️ No Ossário',
     transferido_cemiterio : '🚗 Transf. Cemitério',
     transferido_coletivo  : '📦 Transf. Coletivo',
+    transferido_terreno   : '🏡 Transf. Terreno Part.',
     cremado               : '🔥 Cremado',
     exumado               : '✅ Exumado',
     outro                 : '📝 Outro',
