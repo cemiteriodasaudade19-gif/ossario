@@ -1245,7 +1245,7 @@ function openDetail(id) {
       <div class="detail-field"><div class="detail-field-label">Débito</div><div class="detail-field-value">${r.debito?'⚠️ Sim':'Não'}</div></div>
     </div>${hist}`;
   // Exumações section
-  const exums = r.exumacoes || [];
+  const exums = (r.exumacoes || []).filter(Boolean);
   const usados = exums.length;
   const livres = 4 - usados;
   
@@ -1272,7 +1272,7 @@ function openDetail(id) {
             <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-detail');openExumModal('${id}',${i})">✏️</button>
           </div>
         </div>`;
-    } else if(i < usados + 1) {
+    } else if(i === usados) {
       slotsHtml += `
         <div class="exum-slot vazio" onclick="closeModal('modal-detail');openExumModal('${id}',${i})">
           <div class="exum-slot-num">Vaga ${i+1}</div>
@@ -1280,7 +1280,7 @@ function openDetail(id) {
         </div>`;
     } else {
       slotsHtml += `
-        <div class="exum-slot vazio" style="opacity:.4;cursor:default">
+        <div class="exum-slot vazio" style="opacity:.35;cursor:default">
           <div class="exum-slot-num">Vaga ${i+1}</div>
           <div class="exum-vazio-label" style="color:var(--border2)">— Disponível —</div>
         </div>`;
@@ -1353,38 +1353,44 @@ function openEditModal(id) {
 }
 
 function renderEditExumSlots(r) {
-  const exums = r ? (r.exumacoes || []) : [];
-  const id    = r ? r.id : '';
+  const exums  = r ? (r.exumacoes || []).filter(Boolean) : [];
+  const id     = r ? String(r.id) : '';
   const usados = exums.length;
   const capEl  = document.getElementById('edit-exum-cap');
   if (capEl) capEl.textContent = `${usados}/4 vagas ocupadas`;
-  
+
   const slotsEl = document.getElementById('edit-exum-slots');
   if (!slotsEl) return;
-  
+
   let html = '';
-  for(let i=0;i<4;i++) {
-    const e = exums[i];
-    if(e) {
+  for (let i = 0; i < 4; i++) {
+    const e = exums[i]; // i-th real entry (no nulls since we filtered)
+    if (e) {
+      // Occupied slot — edit/delete buttons pass exact index i
       html += `<div class="exum-slot ocupado">
         <div class="exum-slot-num">Vaga ${i+1}</div>
         <div class="exum-nome">${esc(e.nome)}</div>
-        <div class="exum-meta">${e.dataEntrada?'Entrada: '+esc(e.dataEntrada):''} ${e.lacre?'· Lacre: '+esc(e.lacre):''}</div>
+        <div class="exum-meta">
+          ${e.dataEntrada ? 'Entrada: ' + esc(e.dataEntrada) : ''}
+          ${e.lacre ? ' · Lacre: ' + esc(e.lacre) : ''}
+        </div>
         <span class="exum-badge ${getExumBadgeClass(e.situacao)}">${getExumLabel(e.situacao)}</span>
         <div class="exum-actions">
           <button class="btn btn-ghost btn-sm" onclick="openExumModal('${id}',${i})">✏️</button>
           <button class="btn btn-danger btn-sm" onclick="quickDeleteExum('${id}',${i})">🗑️</button>
         </div>
       </div>`;
-    } else if(i <= usados) {
+    } else if (i === usados) {
+      // Next available empty slot — only show one "add" button
       html += `<div class="exum-slot vazio" onclick="openExumModal('${id}',${i})">
         <div class="exum-slot-num">Vaga ${i+1}</div>
         <div class="exum-vazio-label">➕ Adicionar falecido</div>
       </div>`;
-    } else {
-      html += `<div class="exum-slot vazio" style="opacity:.35;cursor:default">
+    } else if (i < 4) {
+      // Future slots — greyed out
+      html += `<div class="exum-slot vazio" style="opacity:.3;cursor:default">
         <div class="exum-slot-num">Vaga ${i+1}</div>
-        <div class="exum-vazio-label" style="color:var(--border2)">— Disponível —</div>
+        <div class="exum-vazio-label" style="color:var(--border2)">— Disponível após preencher vaga anterior —</div>
       </div>`;
     }
   }
@@ -1609,8 +1615,9 @@ async function saveExumacao() {
     return;
   }
 
-  // Ensure exumacoes array exists and has enough slots
+  // Ensure exumacoes is a clean array (no nulls)
   if (!Array.isArray(r.exumacoes)) r.exumacoes = [];
+  r.exumacoes = r.exumacoes.filter(Boolean);
 
   const entry = {
     nome,
@@ -1622,9 +1629,13 @@ async function saveExumacao() {
     obs        : document.getElementById('exum-obs').value.trim(),
   };
 
-  // Fill any gaps with null up to slotIdx
-  while (r.exumacoes.length < slotIdx) r.exumacoes.push(null);
-  r.exumacoes[slotIdx] = entry;
+  if (slotIdx < r.exumacoes.length) {
+    // Editing existing entry
+    r.exumacoes[slotIdx] = entry;
+  } else {
+    // Adding new entry — always append to end
+    r.exumacoes.push(entry);
+  }
 
   // Save locally first
   saveLocal();
@@ -1651,27 +1662,34 @@ async function saveExumacao() {
 async function deleteExumacao() {
   const ossarioId = document.getElementById('exum-ossario-id').value;
   const slotIdx   = parseInt(document.getElementById('exum-slot-idx').value);
-  
+
   if (!confirm('Remover este falecido do ossário?')) return;
-  
-  const r = db.find(x => String(x.id) === String(ossarioId));
-  if (!r || !r.exumacoes) return;
-  
+
+  const r = db.find(x => String(x.id).trim() === String(ossarioId).trim());
+  if (!r) { toast('Ossário não encontrado', 'error'); return; }
+
+  if (!Array.isArray(r.exumacoes)) r.exumacoes = [];
+  r.exumacoes = r.exumacoes.filter(Boolean); // clean nulls
   r.exumacoes.splice(slotIdx, 1);
-  
+
   saveLocal();
   closeModal('modal-exum');
+
+  // Refresh edit modal if open
   const editId = document.getElementById('edit-id').value;
-  if (editId === ossarioId) renderEditExumSlots(r);
-  
+  if (String(editId).trim() === String(ossarioId).trim()) {
+    renderEditExumSlots(r);
+  }
+
   toast('Falecido removido', 'info');
   saveToSheets(r);
 }
 
 function quickDeleteExum(ossarioId, slotIdx) {
   if (!confirm('Remover este falecido?')) return;
-  const r = db.find(x => String(x.id) === String(ossarioId));
+  const r = db.find(x => String(x.id).trim() === String(ossarioId).trim());
   if (!r || !r.exumacoes) return;
+  r.exumacoes = r.exumacoes.filter(Boolean); // clean nulls first
   r.exumacoes.splice(slotIdx, 1);
   saveLocal();
   renderEditExumSlots(r);
