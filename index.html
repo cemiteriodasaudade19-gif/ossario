@@ -774,11 +774,15 @@ async function apiCall(action, body = {}) {
 
 async function loadFromSheets() {
   if (!API_URL) return;
-  if (isSaving) return; // don't overwrite while saving
+  if (isSaving || isFlushing || saveQueue.length > 0) {
+    // There are pending saves — skip this sync cycle
+    setSyncStatus('syncing', 'Aguardando saves pendentes...');
+    return;
+  }
   setSyncStatus('syncing', 'Sincronizando...');
   try {
     const data = await jsonpCall('getAll');
-    if (data && data.records) {
+    if (data && data.records && data.records.length > 0) {
       db = data.records;
       saveLocal();
       refreshAllViews();
@@ -796,16 +800,42 @@ async function syncNow() {
   toast('Sincronização concluída!', 'success');
 }
 
+// Save queue to prevent concurrent overwrites
+let saveQueue = [];
+let isFlushing = false;
+
 async function saveToSheets(record) {
   if (!API_URL) return;
+  
+  // Add to queue
+  saveQueue.push(record);
   isSaving = true;
-  try {
-    await postCall('save', {record});
-    setTimeout(() => { isSaving = false; loadFromSheets(); }, 3000);
-  } catch(e) {
-    isSaving = false;
-    setSyncStatus('error', 'Erro ao salvar — dado salvo localmente');
+  setSyncStatus('syncing', 'Salvando...');
+  
+  if (!isFlushing) flushSaveQueue();
+}
+
+async function flushSaveQueue() {
+  if (isFlushing || saveQueue.length === 0) return;
+  isFlushing = true;
+  
+  while (saveQueue.length > 0) {
+    const record = saveQueue.shift();
+    try {
+      await postCall('save', {record});
+      setSyncStatus('ok', `Salvo · ${db.length.toLocaleString('pt-BR')} registros`);
+    } catch(e) {
+      setSyncStatus('error', 'Erro ao salvar — dado salvo localmente');
+    }
+    // Small delay between saves
+    if (saveQueue.length > 0) await sleep(500);
   }
+  
+  isFlushing = false;
+  isSaving   = false;
+  
+  // Only sync from Sheets after ALL pending saves are done
+  setTimeout(loadFromSheets, 4000);
 }
 
 async function deleteFromSheets(id) {
@@ -1435,14 +1465,10 @@ async function saveRecord() {
   }
 
   saveLocal();
-  
-  // If this quadra was in customQuadras, keep it there too (no harm)
-  // Remove from custom only if we want to clean up — not needed
-  
   closeModal('modal-edit');
   refreshAllViews();
   toast(id?'Registro atualizado!':'Novo ossário cadastrado!','success');
-  saveToSheets(record); // async, não bloqueia UI
+  saveToSheets(JSON.parse(JSON.stringify(record))); // deep copy, queued
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1637,26 +1663,22 @@ async function saveExumacao() {
     r.exumacoes.push(entry);
   }
 
-  // Save locally first
+  // Save locally FIRST — before anything else
   saveLocal();
 
-  // Close modal and refresh UI
+  // Close modal
   closeModal('modal-exum');
 
-  // Refresh the edit modal slots if it's open for this ossário
+  // Refresh edit modal slots if open for this ossário
   const editId = document.getElementById('edit-id').value;
   if (String(editId).trim() === String(ossarioId).trim()) {
     renderEditExumSlots(r);
   }
 
-  // Also refresh detail view if open
-  openDetail(ossarioId);
-  closeModal('modal-detail');
-
   toast('Falecido salvo com sucesso!', 'success');
 
-  // Sync to Sheets
-  saveToSheets(r);
+  // Queue save to Sheets (non-blocking, won't overwrite local data mid-session)
+  saveToSheets(JSON.parse(JSON.stringify(r))); // deep copy to avoid mutation
 }
 
 async function deleteExumacao() {
@@ -1682,19 +1704,19 @@ async function deleteExumacao() {
   }
 
   toast('Falecido removido', 'info');
-  saveToSheets(r);
+  saveToSheets(JSON.parse(JSON.stringify(r)));
 }
 
 function quickDeleteExum(ossarioId, slotIdx) {
   if (!confirm('Remover este falecido?')) return;
   const r = db.find(x => String(x.id).trim() === String(ossarioId).trim());
   if (!r || !r.exumacoes) return;
-  r.exumacoes = r.exumacoes.filter(Boolean); // clean nulls first
+  r.exumacoes = r.exumacoes.filter(Boolean);
   r.exumacoes.splice(slotIdx, 1);
   saveLocal();
   renderEditExumSlots(r);
   toast('Falecido removido', 'info');
-  saveToSheets(r);
+  saveToSheets(JSON.parse(JSON.stringify(r)));
 }
 
 function getExumBadgeClass(sit) {
