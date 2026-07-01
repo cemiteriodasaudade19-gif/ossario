@@ -225,6 +225,30 @@ tr:hover td{background:#f9fafb}
 .setup-step{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;font-size:13px;color:var(--text2);line-height:1.6}
 .setup-step b{color:var(--text)}
 .step-num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;background:var(--accent);color:#fff;border-radius:50%;font-size:11px;font-weight:700;margin-right:6px;flex-shrink:0}
+/* EXUMAÇÕES */
+.exum-slot{background:var(--surface2);border:1.5px solid var(--border);border-radius:8px;padding:14px;margin-bottom:10px;position:relative;transition:border .15s}
+.exum-slot.ocupado{border-color:#d1d5db}
+.exum-slot.vazio{border:1.5px dashed var(--border2);background:transparent;cursor:pointer}
+.exum-slot.vazio:hover{border-color:var(--accent);background:var(--accent-light)}
+.exum-slot-num{font-size:10px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.exum-nome{font-size:14px;font-weight:700;color:var(--text);margin-bottom:4px}
+.exum-meta{font-size:11px;color:var(--muted);margin-bottom:6px}
+.exum-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:600}
+.exum-inativo{background:#f1f5f9;color:#64748b}
+.exum-transferido-cem{background:#fef3c7;color:#92400e}
+.exum-transferido-col{background:#ede9fe;color:#5b21b6}
+.exum-cremado{background:#fce7f3;color:#9d174d}
+.exum-exumado{background:#dcfce7;color:#166534}
+.exum-outro{background:#f1f5f9;color:#374151}
+.exum-vazio-label{font-size:13px;color:var(--muted2);display:flex;align-items:center;gap:6px;justify-content:center;padding:4px 0}
+.exum-actions{position:absolute;top:10px;right:10px;display:flex;gap:5px}
+.exum-capacidade{display:flex;gap:6px;margin-bottom:14px;align-items:center}
+.exum-cap-item{width:28px;height:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700}
+.exum-cap-usado{background:var(--accent);color:#fff}
+.exum-cap-livre{background:var(--border);color:var(--muted)}
+.exum-cap-label{font-size:12px;color:var(--muted);margin-left:4px}
+.detail-exum-section{margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+
 </style>
 </head>
 <body>
@@ -497,6 +521,12 @@ tr:hover td{background:#f9fafb}
         <div class="form-label" style="margin-bottom:10px">📜 Histórico de Proprietários</div>
         <div id="historico-list"></div>
       </div>
+      <div style="border-top:1px solid var(--border);margin:16px 0 14px"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="form-label" style="margin-bottom:0">⚰️ Falecidos no Ossário</div>
+        <span id="edit-exum-cap" style="font-size:12px;color:var(--muted)"></span>
+      </div>
+      <div id="edit-exum-slots"></div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit')">Cancelar</button>
@@ -536,6 +566,63 @@ tr:hover td{background:#f9fafb}
 </div>
 
 <input type="file" id="import-file" accept=".json" style="display:none" onchange="handleImport(event)">
+
+<!-- MODAL EXUMAÇÃO -->
+<div class="modal-overlay" id="modal-exum">
+  <div class="modal" style="width:500px">
+    <div class="modal-header">
+      <span id="exum-modal-icon">⚰️</span>
+      <div class="modal-title" id="exum-modal-title">Falecido no Ossário</div>
+      <button class="modal-close" onclick="closeModal('modal-exum')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="exum-ossario-id">
+      <input type="hidden" id="exum-slot-idx">
+      <div class="form-group">
+        <label class="form-label">Nome do Falecido</label>
+        <input class="form-input" id="exum-nome" placeholder="Nome completo">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Data de Falecimento</label>
+          <input class="form-input" id="exum-data-falec" placeholder="dd/mm/aaaa">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Data de Entrada no Ossário</label>
+          <input class="form-input" id="exum-data-entrada" placeholder="dd/mm/aaaa">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Situação</label>
+        <select class="form-input" id="exum-situacao">
+          <option value="no_ossario">⚰️ No Ossário</option>
+          <option value="transferido_cemiterio">🚗 Transferido para outro cemitério</option>
+          <option value="transferido_coletivo">📦 Transferido para coletivo</option>
+          <option value="cremado">🔥 Cremado</option>
+          <option value="exumado">✅ Exumado</option>
+          <option value="outro">📝 Outro</option>
+        </select>
+      </div>
+      <div class="form-group" id="exum-destino-group" style="display:none">
+        <label class="form-label">Destino / Observação</label>
+        <input class="form-input" id="exum-destino" placeholder="Informe o destino ou observação">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Data de Saída (se aplicável)</label>
+        <input class="form-input" id="exum-data-saida" placeholder="dd/mm/aaaa">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Observações</label>
+        <input class="form-input" id="exum-obs" placeholder="Observações adicionais">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="exum-del-btn" style="margin-right:auto;display:none" onclick="deleteExumacao()">🗑️ Remover</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-exum')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveExumacao()">💾 Salvar</button>
+    </div>
+  </div>
+</div>
 
 <script>
 // ═══════════════════════════════════════════════════════
@@ -1026,6 +1113,8 @@ function getBadge(r) {
   if(r.debito)    b.push(`<span class="badge-status badge-debito">⚠️ Débito</span>`);
   if(r.historico && r.historico.length>0) b.push(`<span class="badge-status badge-revendido">🔁 Revendido</span>`);
   if(!r.devolvido && !r.debito) b.push(`<span class="badge-status badge-ativo">✅ Ativo</span>`);
+  const exums = r.exumacoes ? r.exumacoes.filter(Boolean).length : 0;
+  if(exums>0) b.push(`<span class="badge-status" style="background:#f0fdf4;color:#166534">⚰️ ${exums}/4</span>`);
   return b.join(' ');
 }
 
@@ -1131,6 +1220,61 @@ function openDetail(id) {
       <div class="detail-field"><div class="detail-field-label">Devolvido</div><div class="detail-field-value">${r.devolvido?'🔄 Sim':'Não'}</div></div>
       <div class="detail-field"><div class="detail-field-label">Débito</div><div class="detail-field-value">${r.debito?'⚠️ Sim':'Não'}</div></div>
     </div>${hist}`;
+  // Exumações section
+  const exums = r.exumacoes || [];
+  const usados = exums.length;
+  const livres = 4 - usados;
+  
+  let capsHtml = '';
+  for(let i=0;i<4;i++) capsHtml += `<div class="exum-cap-item ${i<usados?'exum-cap-usado':'exum-cap-livre'}">${i+1}</div>`;
+  
+  let slotsHtml = '';
+  for(let i=0;i<4;i++) {
+    const e = exums[i];
+    if(e) {
+      slotsHtml += `
+        <div class="exum-slot ocupado">
+          <div class="exum-slot-num">Vaga ${i+1}</div>
+          <div class="exum-nome">${esc(e.nome)}</div>
+          <div class="exum-meta">
+            ${e.dataFalec?'Falecido: '+esc(e.dataFalec)+' · ':''}
+            ${e.dataEntrada?'Entrada: '+esc(e.dataEntrada):''}
+            ${e.dataSaida?' · Saída: '+esc(e.dataSaida):''}
+          </div>
+          <span class="exum-badge ${getExumBadgeClass(e.situacao)}">${getExumLabel(e.situacao)}</span>
+          ${e.destino?`<div style="font-size:11px;color:var(--muted);margin-top:4px">↳ ${esc(e.destino)}</div>`:''}
+          ${e.obs?`<div style="font-size:11px;color:var(--muted);margin-top:2px">📝 ${esc(e.obs)}</div>`:''}
+          <div class="exum-actions">
+            <button class="btn btn-ghost btn-sm" onclick="closeModal('modal-detail');openExumModal('${id}',${i})">✏️</button>
+          </div>
+        </div>`;
+    } else if(i < usados + 1) {
+      slotsHtml += `
+        <div class="exum-slot vazio" onclick="closeModal('modal-detail');openExumModal('${id}',${i})">
+          <div class="exum-slot-num">Vaga ${i+1}</div>
+          <div class="exum-vazio-label">➕ Adicionar falecido</div>
+        </div>`;
+    } else {
+      slotsHtml += `
+        <div class="exum-slot vazio" style="opacity:.4;cursor:default">
+          <div class="exum-slot-num">Vaga ${i+1}</div>
+          <div class="exum-vazio-label" style="color:var(--border2)">— Disponível —</div>
+        </div>`;
+    }
+  }
+  
+  const exumSection = `
+    <div class="detail-exum-section">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div style="font-size:14px;font-weight:700;color:var(--text)">⚰️ Falecidos no Ossário</div>
+        <div style="font-size:12px;color:var(--muted)">${usados}/4 vagas ocupadas</div>
+      </div>
+      <div class="exum-capacidade">${capsHtml}<span class="exum-cap-label">${usados} ocupada${usados!==1?'s':''} · ${livres} livre${livres!==1?'s':''}</span></div>
+      ${slotsHtml}
+    </div>`;
+  
+  document.getElementById('modal-detail-body').innerHTML += exumSection;
+  
   document.getElementById('detail-edit-btn').onclick=()=>{closeModal('modal-detail');openEditModal(id);};
   openModal('modal-detail');
 }
@@ -1148,6 +1292,13 @@ function openAddModal() {
   document.getElementById('edit-debito').checked=false;
   document.getElementById('revenda-section').style.display='none';
   document.getElementById('historico-list').innerHTML='';
+  const capEl = document.getElementById('edit-exum-cap');
+  if (capEl) capEl.textContent = '0/4 vagas ocupadas';
+  const slotsEl = document.getElementById('edit-exum-slots');
+  if (slotsEl) slotsEl.innerHTML = `<div class="exum-slot vazio" onclick="openExumModal('',0)">
+    <div class="exum-slot-num">Vaga 1</div>
+    <div class="exum-vazio-label">➕ Salve o ossário primeiro para adicionar falecidos</div>
+  </div>`;
   populateQuadraFilters();
   openModal('modal-edit');
 }
@@ -1172,7 +1323,49 @@ function openEditModal(id) {
     ? '<div style="color:var(--muted);font-size:12px;margin-bottom:8px">Sem histórico de transferências</div>'
     : hist.map(h=>`<div class="history-item"><div class="history-name" style="font-size:13px">${esc(h.proprietario)}</div><div class="history-meta">Adquirido: ${esc(h.data||'—')} · Transferido: ${esc(h.dataTransferencia||'—')}</div></div>`).join('')
       +`<div class="history-item current"><div class="history-badge">ATUAL</div><div class="history-name current-owner">⭐ ${esc(r.proprietario)}</div><div class="history-meta">Desde ${esc(r.data||'—')}</div></div>`;
+  // Render exumações in edit modal
+  renderEditExumSlots(r);
+  
   openModal('modal-edit');
+}
+
+function renderEditExumSlots(r) {
+  const exums = r ? (r.exumacoes || []) : [];
+  const id    = r ? r.id : '';
+  const usados = exums.length;
+  const capEl  = document.getElementById('edit-exum-cap');
+  if (capEl) capEl.textContent = `${usados}/4 vagas ocupadas`;
+  
+  const slotsEl = document.getElementById('edit-exum-slots');
+  if (!slotsEl) return;
+  
+  let html = '';
+  for(let i=0;i<4;i++) {
+    const e = exums[i];
+    if(e) {
+      html += `<div class="exum-slot ocupado">
+        <div class="exum-slot-num">Vaga ${i+1}</div>
+        <div class="exum-nome">${esc(e.nome)}</div>
+        <div class="exum-meta">${e.dataFalec?'Falecido: '+esc(e.dataFalec)+' · ':''} ${e.dataEntrada?'Entrada: '+esc(e.dataEntrada):''}</div>
+        <span class="exum-badge ${getExumBadgeClass(e.situacao)}">${getExumLabel(e.situacao)}</span>
+        <div class="exum-actions">
+          <button class="btn btn-ghost btn-sm" onclick="openExumModal('${id}',${i})">✏️</button>
+          <button class="btn btn-danger btn-sm" onclick="quickDeleteExum('${id}',${i})">🗑️</button>
+        </div>
+      </div>`;
+    } else if(i <= usados) {
+      html += `<div class="exum-slot vazio" onclick="openExumModal('${id}',${i})">
+        <div class="exum-slot-num">Vaga ${i+1}</div>
+        <div class="exum-vazio-label">➕ Adicionar falecido</div>
+      </div>`;
+    } else {
+      html += `<div class="exum-slot vazio" style="opacity:.35;cursor:default">
+        <div class="exum-slot-num">Vaga ${i+1}</div>
+        <div class="exum-vazio-label" style="color:var(--border2)">— Disponível —</div>
+      </div>`;
+    }
+  }
+  slotsEl.innerHTML = html;
 }
 
 function openRevendaSection() {
@@ -1332,6 +1525,143 @@ function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;'
 function highlight(text,q) {
   if(!q) return esc(text);
   return esc(text).replace(new RegExp('('+q.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+')','gi'),'<span class="highlight">$1</span>');
+}
+
+
+// ═══════════════════════════════════════════════════════
+// EXUMAÇÕES / FALECIDOS
+// ═══════════════════════════════════════════════════════
+function openExumModal(ossarioId, slotIdx) {
+  if (!ossarioId) { toast('Salve o ossário primeiro', 'info'); return; }
+  const r = db.find(x => String(x.id) === String(ossarioId));
+  if (!r) return;
+  
+  const exums = r.exumacoes || [];
+  const e     = exums[slotIdx];
+  
+  document.getElementById('exum-ossario-id').value = ossarioId;
+  document.getElementById('exum-slot-idx').value   = slotIdx;
+  document.getElementById('exum-modal-icon').textContent  = e ? '✏️' : '⚰️';
+  document.getElementById('exum-modal-title').textContent = e 
+    ? `Editar Vaga ${slotIdx+1} — ${r.numero}` 
+    : `Adicionar Falecido — Vaga ${slotIdx+1} — Ossário ${r.numero}`;
+  
+  document.getElementById('exum-nome').value        = e ? e.nome        || '' : '';
+  document.getElementById('exum-data-falec').value  = e ? e.dataFalec   || '' : '';
+  document.getElementById('exum-data-entrada').value= e ? e.dataEntrada || '' : '';
+  document.getElementById('exum-situacao').value    = e ? e.situacao    || 'no_ossario' : 'no_ossario';
+  document.getElementById('exum-destino').value     = e ? e.destino     || '' : '';
+  document.getElementById('exum-data-saida').value  = e ? e.dataSaida   || '' : '';
+  document.getElementById('exum-obs').value         = e ? e.obs         || '' : '';
+  
+  document.getElementById('exum-del-btn').style.display = e ? 'inline-flex' : 'none';
+  toggleExumDestino();
+  openModal('modal-exum');
+}
+
+function toggleExumDestino() {
+  const sit = document.getElementById('exum-situacao').value;
+  const show = ['transferido_cemiterio','transferido_coletivo','outro'].includes(sit);
+  document.getElementById('exum-destino-group').style.display = show ? 'block' : 'none';
+}
+
+// Add change listener when DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('exum-situacao').addEventListener('change', toggleExumDestino);
+});
+
+async function saveExumacao() {
+  const ossarioId = document.getElementById('exum-ossario-id').value;
+  const slotIdx   = parseInt(document.getElementById('exum-slot-idx').value);
+  const nome      = document.getElementById('exum-nome').value.trim();
+  
+  if (!nome) { toast('Informe o nome do falecido', 'error'); return; }
+  
+  const r = db.find(x => String(x.id) === String(ossarioId));
+  if (!r) return;
+  
+  if (!r.exumacoes) r.exumacoes = [];
+  
+  const entry = {
+    nome,
+    dataFalec  : document.getElementById('exum-data-falec').value.trim(),
+    dataEntrada: document.getElementById('exum-data-entrada').value.trim(),
+    situacao   : document.getElementById('exum-situacao').value,
+    destino    : document.getElementById('exum-destino').value.trim(),
+    dataSaida  : document.getElementById('exum-data-saida').value.trim(),
+    obs        : document.getElementById('exum-obs').value.trim(),
+  };
+  
+  r.exumacoes[slotIdx] = entry;
+  // Remove undefined slots at end
+  while(r.exumacoes.length > 0 && !r.exumacoes[r.exumacoes.length-1]) {
+    r.exumacoes.pop();
+  }
+  
+  saveLocal();
+  closeModal('modal-exum');
+  
+  // Refresh edit modal if open
+  const editId = document.getElementById('edit-id').value;
+  if (editId === ossarioId) renderEditExumSlots(r);
+  
+  toast('Falecido salvo com sucesso!', 'success');
+  saveToSheets(r);
+}
+
+async function deleteExumacao() {
+  const ossarioId = document.getElementById('exum-ossario-id').value;
+  const slotIdx   = parseInt(document.getElementById('exum-slot-idx').value);
+  
+  if (!confirm('Remover este falecido do ossário?')) return;
+  
+  const r = db.find(x => String(x.id) === String(ossarioId));
+  if (!r || !r.exumacoes) return;
+  
+  r.exumacoes.splice(slotIdx, 1);
+  
+  saveLocal();
+  closeModal('modal-exum');
+  const editId = document.getElementById('edit-id').value;
+  if (editId === ossarioId) renderEditExumSlots(r);
+  
+  toast('Falecido removido', 'info');
+  saveToSheets(r);
+}
+
+function quickDeleteExum(ossarioId, slotIdx) {
+  if (!confirm('Remover este falecido?')) return;
+  const r = db.find(x => String(x.id) === String(ossarioId));
+  if (!r || !r.exumacoes) return;
+  r.exumacoes.splice(slotIdx, 1);
+  saveLocal();
+  renderEditExumSlots(r);
+  toast('Falecido removido', 'info');
+  saveToSheets(r);
+}
+
+function getExumBadgeClass(sit) {
+  const map = {
+    no_ossario            : 'exum-inativo',
+    transferido_cemiterio : 'exum-transferido-cem',
+    transferido_coletivo  : 'exum-transferido-col',
+    cremado               : 'exum-cremado',
+    exumado               : 'exum-exumado',
+    outro                 : 'exum-outro',
+  };
+  return map[sit] || 'exum-inativo';
+}
+
+function getExumLabel(sit) {
+  const map = {
+    no_ossario            : '⚰️ No Ossário',
+    transferido_cemiterio : '🚗 Transf. Cemitério',
+    transferido_coletivo  : '📦 Transf. Coletivo',
+    cremado               : '🔥 Cremado',
+    exumado               : '✅ Exumado',
+    outro                 : '📝 Outro',
+  };
+  return map[sit] || sit;
 }
 
 // ═══════════════════════════════════════════════════════
